@@ -36,6 +36,11 @@ COME SI USA
 - Ogni lotto è una riga a sé, con scadenza, data di apertura e confezioni.
 - Codici GS1 del produttore (DataMatrix o codice a barre lungo, con
   (01) (17) (10)): lotto e scadenza si compilano da soli.
+- Se il codice non contiene la scadenza, l'app legge le scritte stampate
+  sull'etichetta (EXP, Scad., Use by, simbolo clessidra…) e propone
+  scadenza e lotto. Controllali sempre prima di salvare. Se non li trova,
+  premi "Leggi scadenza dalla foto" e fotografa da vicino la data.
+  La prima lettura richiede qualche secondo in più (carica il lettore).
 - Per i prodotti senza codice GS1 puoi stampare etichette QR fatte così:
     CODICE;Prodotto;Ditta;Lotto;Scadenza
   es. RG-014;Agar sangue;bioMérieux;1008765;31/03/2027

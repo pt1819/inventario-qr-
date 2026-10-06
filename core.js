@@ -125,6 +125,91 @@
     return { limit, openLimit, days, level, reason };
   }
 
-  const api = { todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus };
+  /* ---------- Scadenza e lotto dal testo dell'etichetta (OCR) ---------- */
+  const MONTHS = { GEN: 1, JAN: 1, FEB: 2, MAR: 3, APR: 4, MAG: 5, MAY: 5, GIU: 6, JUN: 6, LUG: 7, JUL: 7, AGO: 8, AUG: 8,
+    SET: 9, SEP: 9, SEPT: 9, OTT: 10, OCT: 10, NOV: 11, DIC: 12, DEC: 12 };
+  // Parole che di solito precedono la scadenza o la data di produzione
+  const EXP_WORDS = /(EXP(IRY|IRATION|\.)?|USE\s*BY|USE\s*BEFORE|BEST\s*BEFORE|SCAD(ENZA|\.)?|UTILIZZARE\s*ENTRO|DA\s*USARE\s*ENTRO|VALID[AO]?\s*FINO|VERWENDBAR|VERFALL|CADUCIDAD|CAD\.?|PEREMP|DLU|⌛|⧖)/g;
+  const MFG_WORDS = /(MFG|MFD|MANUF|PROD(\.|UCTION|OTTO|UZIONE)?|FABBR|DATE\s*OF\s*MANUF|HERST|FAB\.|⚒)/g;
+
+  // Corregge gli scambi tipici dell'OCR dentro i numeri (O→0, I/l→1, S→5, B→8)
+  function fixDigits(s) { return s.replace(/[OoQD]/g, '0').replace(/[Il|!]/g, '1').replace(/[Ss]/g, '5').replace(/B/g, '8').replace(/Z/g, '2'); }
+  function mk(y, mo, d) {
+    if (y < 100) y += 2000;
+    if (y < 2000 || y > 2099 || mo < 1 || mo > 12) return '';
+    const last = lastDayOfMonth(y, mo);
+    if (d == null) d = last;
+    if (d < 1 || d > last) return '';
+    return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  }
+
+  function findDates(text) {
+    const T = String(text || '').toUpperCase();
+    const out = [];
+    const N = '[0-9OQDIl|!SBZ]'; // cifre più i caratteri che l'OCR confonde con le cifre
+    const add = (iso, index, len, kind, re) => { if (iso) out.push({ iso, index, len, kind }); else re.lastIndex = index + 1; };
+    let m;
+    // 2027-12-31, 2027/12/31, 2027.12.31
+    let re = new RegExp(`(?<![0-9])([0-9]${N}{3})\\s?[-/.]\\s?(${N}{1,2})\\s?[-/.]\\s?(${N}{1,2})(?![0-9])`, 'g');
+    while ((m = re.exec(T))) { const [y, mo, d] = [m[1], m[2], m[3]].map(x => +fixDigits(x)); add(mk(y, mo, d), m.index, m[0].length, 'ymd', re); }
+    // 31/12/2027, 31.12.27, 31-12-2027 (giorno prima del mese, uso europeo)
+    re = new RegExp(`(?<![0-9])([0-9]${N}?)\\s?[-/.]\\s?(${N}{1,2})\\s?[-/.]\\s?(${N}{4}|${N}{2})(?![0-9])`, 'g');
+    while ((m = re.exec(T))) { const [d, mo, y] = [m[1], m[2], m[3]].map(x => +fixDigits(x)); add(mk(y, mo, d), m.index, m[0].length, 'dmy', re); }
+    // 2027-12 (formato ISO 15223 "anno-mese")
+    re = new RegExp(`(?<![0-9])(20${N}{2})\\s?[-/.]\\s?(${N}{1,2})(?![0-9/.\\-])`, 'g');
+    while ((m = re.exec(T))) add(mk(+fixDigits(m[1]), +fixDigits(m[2])), m.index, m[0].length, 'ym', re);
+    // 12/2027
+    re = new RegExp(`(?<![0-9/.\\-])([0-9]${N}?)\\s?[-/.]\\s?(20${N}{2})(?![0-9])`, 'g');
+    while ((m = re.exec(T))) add(mk(+fixDigits(m[2]), +fixDigits(m[1])), m.index, m[0].length, 'my', re);
+    // 31 DEC 2027, DEC 2027, 2027 DEC 31, 31-DIC-27
+    const MN = Object.keys(MONTHS).sort((a, b) => b.length - a.length).join('|');
+    re = new RegExp(`(?:([0-9]${N}?)[\\s\\-./]*)?\\b(${MN})[A-Z]*\\.?[\\s\\-./]*(20${N}{2}|${N}{2})(?![0-9])`, 'g');
+    while ((m = re.exec(T))) add(mk(+fixDigits(m[3]), MONTHS[m[2]], m[1] ? +fixDigits(m[1]) : null), m.index, m[0].length, 'mon', re);
+    re = new RegExp(`(20${N}{2})[\\s\\-./]*(${MN})[A-Z]*\\.?(?:[\\s\\-./]*(${N}{1,2}))?(?![0-9])`, 'g');
+    while ((m = re.exec(T))) add(mk(+fixDigits(m[1]), MONTHS[m[2]], m[3] ? +fixDigits(m[3]) : null), m.index, m[0].length, 'mon', re);
+
+    // Togli i doppioni sovrapposti (tieni la lettura più lunga)
+    out.sort((a, b) => a.index - b.index || b.len - a.len);
+    const res = [];
+    for (const c of out) { const prev = res[res.length - 1]; if (prev && c.index < prev.index + prev.len) { if (c.len > prev.len) res[res.length - 1] = c; continue; } res.push(c); }
+    return res;
+  }
+
+  // Restituisce la scadenza più probabile, le alternative e il lotto letto
+  function extractLabelInfo(text, today) {
+    today = today || todayISO();
+    const T = String(text || '').toUpperCase();
+    const dates = findDates(T);
+    const lastPos = (re, s) => { re.lastIndex = 0; let m, pos = -1; while ((m = re.exec(s))) pos = m.index; return pos; };
+    // Guarda le parole subito prima della data: conta quella più vicina
+    const kind = c => {
+      const before = T.slice(Math.max(0, c.index - 28), c.index);
+      const e = lastPos(EXP_WORDS, before), f = lastPos(MFG_WORDS, before);
+      return e < 0 && f < 0 ? '' : (e > f ? 'exp' : 'mfg');
+    };
+    const t = toDayNum(today);
+    const scored = dates.map(c => {
+      let score = 0;
+      const k = kind(c), exp = k === 'exp', mfg = k === 'mfg';
+      if (exp) score += 10;
+      if (mfg) score -= 10;
+      const dn = toDayNum(c.iso);
+      if (dn > t) score += 2;
+      if (dn > t + 365 * 12 || dn < t - 365 * 3) score -= 20; // date implausibili
+      return Object.assign({}, c, { score, exp, mfg });
+    }).filter(c => c.score > -20);
+    // A parità di punteggio vince la data più lontana (la scadenza viene dopo la produzione)
+    scored.sort((a, b) => b.score - a.score || b.iso.localeCompare(a.iso));
+    const uniq = [];
+    for (const c of scored) if (!uniq.some(u => u.iso === c.iso)) uniq.push(c);
+    const best = uniq[0] && !uniq[0].mfg ? uniq[0] : null;
+
+    let lot = '';
+    const lm = /(?:\bLOT(?:TO)?|\bBATCH|\bCH\.?-?B\.?|\bCHARGE)\b\s*(?:N[O°º.]?\s*)?[:#.\-]?\s*([A-Z0-9][A-Z0-9\-\/.]{2,24})/.exec(T);
+    if (lm) lot = lm[1].replace(/[.\-\/]+$/, '');
+    return { exp: best ? best.iso : '', confident: !!(best && best.exp), candidates: uniq.slice(0, 4).map(c => c.iso), lot };
+  }
+
+  const api = { todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus, findDates, extractLabelInfo };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);

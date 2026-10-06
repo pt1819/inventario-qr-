@@ -1,10 +1,15 @@
 // Cache dell'app per funzionare anche senza connessione.
 // Prima prova la rete (così gli aggiornamenti arrivano subito), se manca usa la copia salvata.
-const CACHE = 'inventario-qr-v3';
+const CACHE = 'inventario-qr-v4';
 const FILES = [
   './', './index.html', './manifest.json', './core.js',
   './lib/jsQR.js', './lib/xlsx.full.min.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png', './apple-touch-icon.png'
+];
+// File per leggere le scritte dell'etichetta: grandi, si scaricano dopo, senza bloccare l'installazione
+const OCR_FILES = [
+  './lib/ocr/tesseract.min.js', './lib/ocr/worker.min.js', './lib/ocr/eng.traineddata.gz',
+  './lib/ocr/tesseract-core-simd-lstm.wasm.js', './lib/ocr/tesseract-core-lstm.wasm.js'
 ];
 
 self.addEventListener('install', e => {
@@ -16,6 +21,7 @@ self.addEventListener('activate', e => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
+      .then(() => caches.open(CACHE)).then(c => c.addAll(OCR_FILES)).catch(() => {})
   );
 });
 

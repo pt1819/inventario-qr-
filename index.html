@@ -158,7 +158,7 @@ details.settings summary{font-weight:600;cursor:pointer}
       <input id="manual" placeholder="Codice a mano o lettore USB" autocomplete="off" enterkeyhint="go" aria-label="Codice">
       <button class="btn solid" type="submit">Avanti</button>
     </form>
-    <p class="hint">Legge QR, DataMatrix e codici a barre. Sulle confezioni con codice GS1 del produttore lotto e scadenza si compilano da soli. Ogni lettura apre una scheda da confermare prima di salvare.</p>
+    <p class="hint">Legge QR, DataMatrix e codici a barre. Lotto e scadenza si compilano da soli: dal codice GS1 del produttore oppure leggendo le scritte stampate sull'etichetta. Ogni lettura apre una scheda da confermare prima di salvare.</p>
     <div id="flash" class="flash" hidden></div>
   </section>
 
@@ -389,7 +389,20 @@ function drawSheet(){
     g.append(field('fExp','Scadenza',inp('date',sc.exp||'',{required:true})));
     g.append(field('fQty','Confezioni caricate',inp('number',1,{min:1,inputMode:'numeric'})));
     fl.append(g);
-    if(sc.lot||sc.exp)fl.append(el('div','note','Lotto e scadenza letti dal codice del produttore: controlla che corrispondano all\'etichetta.'));
+    if(sc.source==='gs1'&&(sc.lot||sc.exp))fl.append(el('div','note','Lotto e scadenza letti dal codice del produttore: controlla che corrispondano all\'etichetta.'));
+    const box=el('div');box.id='ocrBox';fl.append(box);
+    const fileIn=el('input');fileIn.type='file';fileIn.accept='image/*';fileIn.setAttribute('capture','environment');fileIn.hidden=true;
+    const photoBtn=el('button','btn','Leggi scadenza dalla foto');photoBtn.type='button';
+    photoBtn.onclick=()=>{suspendCamera();fileIn.click()};
+    fileIn.onchange=async()=>{
+      const f=fileIn.files[0];fileIn.value='';if(!f)return;
+      try{const bmp=await createImageBitmap(f);const c=document.createElement('canvas');const k=Math.min(1,2000/Math.max(bmp.width,bmp.height));
+        c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);runOCR(c,true)}
+      catch(e){F.ocr={state:'error'};renderOcr()}
+    };
+    const row=el('div','quick');row.append(photoBtn,fileIn);fl.append(row);
+    renderOcr();
+    if(F.snap&&!F.ocr&&!sc.exp){const f=F;f.ocr={state:'running'};setTimeout(()=>{if(F===f)runOCR(f.snap,false)},0)}
   }else if(F.mode==='apertura'||F.mode==='scarico'){
     const avail=lotsOf(F.code,true);
     if(!avail.length){
@@ -426,7 +439,7 @@ function drawSheet(){
     del.onclick=()=>{if(del.dataset.armed){S.lots=S.lots.filter(x=>x!==l);logMove('Eliminato',l,l.qty,'Lotto rimosso dall\'inventario');save();render();closeSheet();flash('Lotto eliminato.')}else{del.dataset.armed=1;del.textContent='Tocca di nuovo per confermare'}};
     fl.append(del);
   }
-  sh.append(fl);
+  sh.append(fl);renderOcr();
 
   const bar=el('div','bar');
   const cancel=el('button','btn','Annulla');cancel.type='button';cancel.onclick=closeSheet;
@@ -494,6 +507,56 @@ function submitSheet(){
   }
 }
 
+/* ---------- Lettura del testo dell'etichetta (OCR, funziona offline) ---------- */
+let ocrP=null;
+function loadScript(src){return new Promise((res,rej)=>{const t=document.createElement('script');t.src=src;t.onload=res;t.onerror=()=>rej(new Error('load'));document.head.append(t)})}
+function getOCR(){
+  if(!ocrP){
+    const base=new URL('lib/ocr',location.href).href;
+    ocrP=(window.Tesseract?Promise.resolve():loadScript('lib/ocr/tesseract.min.js'))
+      .then(()=>Tesseract.createWorker('eng',1,{workerPath:base+'/worker.min.js',corePath:base,langPath:base,gzip:true}))
+      .catch(e=>{ocrP=null;throw e});
+  }
+  return ocrP;
+}
+async function runOCR(src,manual){
+  const token=F;if(!token)return;
+  token.ocr={state:'running'};renderOcr();
+  try{
+    const w=await getOCR();const {data}=await w.recognize(src);
+    if(F!==token)return;
+    const r=C.extractLabelInfo(data.text);
+    const o={state:'done',res:r,filled:false,lotFilled:false};
+    const fe=$('fExp'),fl=$('fLot');
+    if(r.exp&&(manual||!(fe?fe.value:token.scan.exp))){if(fe)fe.value=r.exp;token.scan.exp=r.exp;o.filled=true}
+    if(r.lot&&!(fl?fl.value:token.scan.lot)){if(fl)fl.value=r.lot;token.scan.lot=r.lot;o.lotFilled=true}
+    token.ocr=o;
+  }catch(e){if(F!==token)return;token.ocr={state:'error'}}
+  renderOcr();
+}
+function renderOcr(){
+  const box=$('ocrBox');if(!box||!F)return;box.innerHTML='';
+  const o=F.ocr;if(!o)return;
+  if(o.state==='running'){box.append(el('div','note','Leggo scadenza e lotto dalle scritte dell\'etichetta…'));return}
+  if(o.state==='error'){box.append(el('div','note warn','Non sono riuscito a leggere il testo. Scrivi la scadenza a mano o riprova con una foto.'));return}
+  const r=o.res;
+  if(!r.candidates.length){box.append(el('div','note warn','Non ho trovato una data sull\'etichetta. Premi "Leggi scadenza dalla foto" e fotografa da vicino la scritta della scadenza.'));return}
+  const n=el('div','note'+(o.filled&&r.confident?'':' warn'));
+  let msg;
+  if(o.filled&&r.confident)msg=`Scadenza letta dall'etichetta: ${C.fmtIT(r.exp)}. Controlla che sia giusta.`;
+  else if(o.filled)msg=`Ho trovato più date e ho scelto ${C.fmtIT(r.exp)}. Controlla, o tocca quella giusta.`;
+  else msg='Date trovate sull\'etichetta: tocca quella di scadenza.';
+  if(o.lotFilled)msg+=` Lotto letto: ${r.lot}.`;
+  n.append(el('span',null,msg));
+  if(r.candidates.length>1||!o.filled){
+    const chips=el('div','quick');chips.style.marginTop='8px';
+    for(const iso of r.candidates){const b=el('button','btn',C.fmtIT(iso));b.type='button';
+      b.onclick=()=>{const fe=$('fExp');if(fe)fe.value=iso;F.scan.exp=iso;r.exp=iso;r.confident=true;o.filled=true;renderOcr()};chips.append(b)}
+    n.append(chips);
+  }
+  box.append(n);
+}
+
 /* ---------- Inserimento da tastiera o lettore USB ---------- */
 $('manualForm').addEventListener('submit',e=>{
   e.preventDefault();const raw=$('manual').value;$('manual').value='';
@@ -517,26 +580,42 @@ function scanFeedback(msg){
   sessionCount++;$('sCount').textContent=sessionCount+' registrati';
   $('slast').textContent=msg;
 }
-async function openScanner(){
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){flash('Questo browser non può usare la fotocamera. Apri l\'app da Chrome con indirizzo https.',true);return}
+let suspended=false;
+async function startCamera(){
   try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false})}
-  catch(e){flash(e.name==='NotAllowedError'?'Permesso fotocamera negato. Abilitalo nelle impostazioni del sito o dell\'app.':'Fotocamera non disponibile.',true);return}
-  track=stream.getVideoTracks()[0];
+  catch(e){flash(e.name==='NotAllowedError'?'Permesso fotocamera negato. Abilitalo nelle impostazioni del sito o dell\'app.':'Fotocamera non disponibile.',true);return false}
+  track=stream.getVideoTracks()[0];suspended=false;
   try{const caps=track.getCapabilities?track.getCapabilities():{};if(caps.focusMode&&caps.focusMode.includes('continuous'))await track.applyConstraints({advanced:[{focusMode:'continuous'}]});$('torch').hidden=!caps.torch}catch(e){$('torch').hidden=true}
   const v=$('video');v.srcObject=stream;await v.play().catch(()=>{});
+  return true;
+}
+// Spegne la fotocamera senza chiudere lo scanner (es. mentre si scatta una foto dell'etichetta)
+function suspendCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;track=null;suspended=true;torchOn=false;$('torch').classList.remove('on')}}
+async function openScanner(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){flash('Questo browser non può usare la fotocamera. Apri l\'app da Chrome con indirizzo https.',true);return}
+  if(!await startCamera())return;
   $('scanner').hidden=false;document.body.classList.add('locked');
   sessionCount=0;$('sCount').textContent='0 registrati';$('slast').textContent='Inquadra il codice della confezione';
   if('BarcodeDetector' in window&&!detector){
     try{const fm=await BarcodeDetector.getSupportedFormats();detector=new BarcodeDetector({formats:fm.length?fm:['qr_code']})}catch(e){detector=null}
   }
+  if(defaultAct==='carico')getOCR().catch(()=>{}); // prepara la lettura del testo in anticipo
   running=true;paused=false;loop();
 }
 function closeScanner(){
-  running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;torchOn=false;$('torch').classList.remove('on');
+  running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;suspended=false;torchOn=false;$('torch').classList.remove('on');
   $('scanner').hidden=true;if(!F)document.body.classList.remove('locked');
   if(sessionCount)flash(`Sessione chiusa: ${sessionCount} operazioni registrate.`);
 }
-function resumeScan(){for(const k of recent.keys())recent.set(k,Date.now());paused=false}
+async function resumeScan(){
+  if(suspended&&running){if(!await startCamera()){closeScanner();return}}
+  for(const k of recent.keys())recent.set(k,Date.now());paused=false;
+}
+// Copia del fotogramma corrente, usata per leggere scadenza e lotto stampati sull'etichetta
+function grabFrame(v){
+  try{const c=document.createElement('canvas');const s=Math.min(1,1800/Math.max(v.videoWidth,v.videoHeight));
+    c.width=Math.round(v.videoWidth*s);c.height=Math.round(v.videoHeight*s);c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c}catch(e){return null}
+}
 async function detect(v){
   if(detector){try{const r=await detector.detect(v);if(r.length)return r[0].rawValue}catch(e){detector=null}}
   const cv=$('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});
@@ -556,7 +635,7 @@ async function loop(){
       const t=Date.now(),key=raw.trim();
       if(!recent.has(key)||t-recent.get(key)>2500){
         recent.set(key,t);const s=C.parseScan(key);
-        if(s){beep();paused=true;openSheet({mode:defaultAct,code:s.code,scan:s})}
+        if(s){beep();paused=true;openSheet({mode:defaultAct,code:s.code,scan:s,snap:grabFrame(v)})}
       }else recent.set(key,t);
     }
   }
@@ -565,7 +644,7 @@ async function loop(){
 let torchOn=false;
 $('torch').onclick=async()=>{try{torchOn=!torchOn;await track.applyConstraints({advanced:[{torch:torchOn}]});$('torch').classList.toggle('on',torchOn)}catch(e){torchOn=false}};
 $('openScan').onclick=openScanner;$('closeScan').onclick=closeScanner;
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)closeScanner()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&running){if(F)suspendCamera();else closeScanner()}});
 
 /* ---------- Excel ---------- */
 const XLSXMIME='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
