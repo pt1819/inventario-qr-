@@ -1,0 +1,56 @@
+INVENTARIO QR — come metterla online e installarla sul telefono
+=================================================================
+
+L'app deve stare su un indirizzo https per poter usare la fotocamera.
+Il modo gratuito più semplice è GitHub Pages.
+
+1) METTERLA ONLINE (dal PC, una volta sola, circa 10 minuti)
+   a. Crea un account gratuito su https://github.com
+   b. In alto a destra: "+" > "New repository".
+      Nome: inventario-qr  ·  Visibilità: Public  ·  "Create repository".
+   c. Nella pagina del repository: "uploading an existing file".
+      Trascina TUTTO il contenuto della cartella estratta dallo zip
+      (index.html, manifest.json, sw.js, le icone .png e la cartella lib).
+      Poi "Commit changes".
+   d. Vai su Settings > Pages.
+      In "Branch" scegli "main" e cartella "/ (root)", poi "Save".
+   e. Dopo 1-2 minuti l'app è online a questo indirizzo:
+      https://TUO-NOME-UTENTE.github.io/inventario-qr/
+
+2) INSTALLARLA SUL TELEFONO ANDROID
+   a. Apri quell'indirizzo con Chrome.
+   b. Menu ⋮ > "Installa app" (o "Aggiungi a schermata Home").
+   c. Al primo "Apri scanner" consenti l'uso della fotocamera.
+   Da quel momento si apre dall'icona come un'app e funziona anche offline.
+
+3) SE VUOI IL FILE .APK
+   a. Vai su https://www.pwabuilder.com
+   b. Incolla l'indirizzo dell'app e premi "Start".
+   c. "Package for stores" > Android > "Generate package".
+   d. Nello zip scaricato c'è il file .apk da installare sul telefono
+      (Android chiederà di consentire l'installazione da fonti sconosciute).
+
+COME SI USA
+- Scegli l'operazione (Carico, Apertura, Scarico), apri lo scanner e
+  inquadra la confezione. Si apre una scheda: controlla e premi Salva.
+- Ogni lotto è una riga a sé, con scadenza, data di apertura e confezioni.
+- Codici GS1 del produttore (DataMatrix o codice a barre lungo, con
+  (01) (17) (10)): lotto e scadenza si compilano da soli.
+- Per i prodotti senza codice GS1 puoi stampare etichette QR fatte così:
+    CODICE;Prodotto;Ditta;Lotto;Scadenza
+  es. RG-014;Agar sangue;bioMérieux;1008765;31/03/2027
+  Lotto e scadenza si possono anche omettere e scrivere al carico.
+- "Stabilità dopo apertura": se la imposti (es. 30 giorni), l'app calcola
+  la data "usare entro" e avvisa quando un reagente aperto va eliminato.
+- Elenco ordinato per prima scadenza (FEFO). Strisce colorate:
+  rosso = scaduto, giallo = in scadenza, verde = OK.
+- Tocca un lotto per segnarlo aperto, scaricarne una confezione o
+  correggerlo. Ogni operazione finisce nel registro movimenti.
+
+NOTE
+- I dati restano salvati sul telefono. Esporta in Excel ogni tanto
+  come copia di sicurezza. Il file ha due fogli: Inventario e Movimenti.
+- Il pulsante "Condividi" manda il file Excel via WhatsApp, email, Drive…
+- Con "Importa" puoi ricaricare un file esportato (anche su un altro
+  telefono) per riprendere da dove eri.
+- In Impostazioni scrivi il nome dell'operatore: compare nel registro.
