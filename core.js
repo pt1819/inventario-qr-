@@ -233,6 +233,84 @@
     return { exp: best ? best.iso : '', confident: !!(best && best.exp), candidates: uniq.slice(0, 4).map(c => c.iso), lot, lots: lots.slice(0, 4) };
   }
 
-  const api = { todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus, findDates, findLots, extractLabelInfo };
+  /* ---------- Operazioni sul magazzino ----------
+     Unica logica usata sia dal telefono sia dallo script Google del magazzino condiviso.
+     state = { products: {codice: {...}}, lots: [{id, code, lot, exp, opened, qty, last}], log: [...] }
+     op    = { opId, t, op (operatore), type, ... }  →  restituisce { ok, msg, lotId } */
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function applyOp(state, o) {
+    state.products = state.products || {}; state.lots = state.lots || []; state.log = state.log || [];
+    const t = o.t || new Date().toISOString();
+    const p0 = o.product;
+    if (p0 && p0.code) {
+      const old = state.products[p0.code] || { code: p0.code };
+      state.products[p0.code] = Object.assign(old, {
+        code: p0.code, name: p0.name || '', maker: p0.maker || '', type: p0.type || '',
+        stab: p0.stab === '' || p0.stab == null ? '' : Math.max(0, parseInt(p0.stab) || 0)
+      });
+    }
+    const findLot = id => state.lots.find(l => l.id === id);
+    const log = (action, l, qty, note) => {
+      const p = state.products[l.code] || {};
+      state.log.push({ t, op: o.op || '', action, code: l.code, name: p.name || '', maker: p.maker || '', lot: l.lot || '', exp: l.exp || '', qty: qty == null ? '' : qty, note: note || '', opId: o.opId || '' });
+    };
+    const missing = { ok: false, msg: 'Lotto non trovato: forse è stato eliminato o modificato da un altro operatore.' };
+    switch (o.type) {
+      case 'prodotto':
+        return { ok: true };
+      case 'carico': {
+        const qty = Math.max(1, parseInt(o.qty) || 1);
+        let l = state.lots.find(x => x.code === o.code && x.lot === o.lot);
+        if (l) { if (o.exp) l.exp = o.exp; l.qty = (+l.qty || 0) + qty; l.last = t; }
+        else { l = { id: o.lotId || newId(), code: o.code, lot: o.lot || '', exp: o.exp || '', opened: '', qty, last: t }; state.lots.push(l); }
+        log('Carico', l, qty);
+        return { ok: true, lotId: l.id };
+      }
+      case 'apertura': {
+        const l = findLot(o.lotId); if (!l) return missing;
+        l.opened = o.date || t.slice(0, 10); l.last = t;
+        log('Apertura', l, 1, 'Aperto il ' + fmtIT(l.opened));
+        return { ok: true, lotId: l.id };
+      }
+      case 'scarico': {
+        const l = findLot(o.lotId); if (!l) return missing;
+        let qty = Math.max(1, parseInt(o.qty) || 1), note = '';
+        if (qty > l.qty) { note = `Richieste ${qty}, disponibili ${l.qty}`; qty = l.qty; }
+        l.qty -= qty; l.last = t;
+        log('Scarico', l, qty, note);
+        return { ok: true, lotId: l.id, msg: note };
+      }
+      case 'correzione': {
+        const l = findLot(o.lotId); if (!l) return missing;
+        const ch = [];
+        if (o.lot != null && o.lot !== l.lot) { ch.push(`lotto ${l.lot || '—'}→${o.lot || '—'}`); l.lot = o.lot; }
+        if (o.exp != null && o.exp !== l.exp) { ch.push(`scadenza ${fmtIT(l.exp) || '—'}→${fmtIT(o.exp) || '—'}`); l.exp = o.exp; }
+        if (o.opened != null && o.opened !== l.opened) { ch.push(`apertura ${fmtIT(l.opened) || '—'}→${fmtIT(o.opened) || '—'}`); l.opened = o.opened; }
+        if (o.qty != null && +o.qty !== +l.qty) { ch.push(`quantità ${l.qty}→${o.qty}`); l.qty = Math.max(0, parseInt(o.qty) || 0); }
+        l.last = t;
+        if (ch.length) log('Correzione', l, '', ch.join('; '));
+        return { ok: true, lotId: l.id };
+      }
+      case 'elimina': {
+        const l = findLot(o.lotId); if (!l) return { ok: true };
+        state.lots = state.lots.filter(x => x !== l);
+        log('Eliminato', l, l.qty, 'Lotto rimosso dall\'inventario');
+        return { ok: true };
+      }
+      case 'importa': {
+        state.products = o.products || {}; state.lots = (o.lots || []).map(l => Object.assign({ id: newId() }, l));
+        state.log.push({ t, op: o.op || '', action: 'Importazione', code: '', name: '', maker: '', lot: '', exp: '', qty: '', note: o.note || '', opId: o.opId || '' });
+        return { ok: true };
+      }
+      case 'svuota': {
+        state.products = {}; state.lots = [];
+        state.log.push({ t, op: o.op || '', action: 'Magazzino svuotato', code: '', name: '', maker: '', lot: '', exp: '', qty: '', note: '', opId: o.opId || '' });
+        return { ok: true };
+      }
+    }
+    return { ok: false, msg: 'Operazione sconosciuta: ' + o.type };
+  }
+
+  const api = { newId, applyOp, todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus, findDates, findLots, extractLabelInfo };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);

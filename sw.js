@@ -1,6 +1,6 @@
 // Cache dell'app per funzionare anche senza connessione.
 // Prima prova la rete (così gli aggiornamenti arrivano subito), se manca usa la copia salvata.
-const CACHE = 'inventario-qr-v4';
+const CACHE = 'inventario-qr-v5';
 const FILES = [
   './', './index.html', './manifest.json', './core.js',
   './lib/jsQR.js', './lib/xlsx.full.min.js',
