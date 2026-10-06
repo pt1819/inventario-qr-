@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d2320">
+<title>Inventario QR</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  --bg:#eef0ec; --surface:#ffffff; --ink:#1d2320; --muted:#5f6a64; --line:#d3d8d2;
+  --accent:#f2b705; --accent-ink:#1d2320; --chip:#e4e8e2;
+  --ok:#1f7a4d; --ok-bg:#dcefe4; --warn:#8a5a00; --warn-bg:#fbedc4; --bad:#b3361f; --bad-bg:#f8ddd6; --info:#2d5d8a; --info-bg:#dde8f3;
+  --f-display:"Roboto Condensed","sans-serif-condensed","Arial Narrow",sans-serif;
+  --f-body:system-ui,-apple-system,"Roboto","Segoe UI",sans-serif;
+  --f-mono:ui-monospace,"Roboto Mono","Droid Sans Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#141816; --surface:#1d2320; --ink:#e8ece7; --muted:#9aa59f; --line:#323a36;
+  --accent:#f2b705; --accent-ink:#141816; --chip:#28302c;
+  --ok:#5fc492; --ok-bg:#1d3a2b; --warn:#f2c94c; --warn-bg:#3d3215; --bad:#ef7a62; --bad-bg:#45231c; --info:#8ab8e6; --info-bg:#1f3042;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden],#sheetWrap[hidden],#scanner[hidden],#alert[hidden],#confirmBox[hidden],.btn[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.45 var(--f-body);
+  padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px);
+  -webkit-tap-highlight-color:transparent}
+body.locked{overflow:hidden}
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:3px solid var(--ink);padding-bottom:10px}
+h1{font:700 2.1rem/1 var(--f-display);margin:0;text-transform:uppercase}
+h1 span{background:var(--accent);color:var(--accent-ink);padding:0 .25em}
+.sub{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:4px}
+.stats{display:flex;gap:18px;font-variant-numeric:tabular-nums}
+.stat b{display:block;font:700 1.5rem/1 var(--f-display)}
+.stat small{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.stat.bad b{color:var(--bad)} .stat.warn b{color:var(--warn)}
+
+.alert{gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 12px;border-radius:6px;background:var(--bad-bg);color:var(--ink);border-left:5px solid var(--bad);font-weight:500}
+.alert:not([hidden]){display:flex}
+.alert.warn{background:var(--warn-bg);border-left-color:var(--warn)}
+.alert button{border:0;background:none;color:inherit;font:600 .9rem var(--f-body);text-decoration:underline;padding:4px 0}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.seg{display:flex;border:2px solid var(--ink);border-radius:4px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;color:var(--ink);font:600 .85rem var(--f-body);padding:10px 6px;text-transform:uppercase;letter-spacing:.04em}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.big{display:flex;align-items:center;justify-content:center;width:100%;min-height:64px;border:0;border-radius:4px;background:var(--accent);color:var(--accent-ink);font:700 1.35rem var(--f-display);text-transform:uppercase;letter-spacing:.04em}
+.manual{display:flex;gap:8px}
+.manual input{flex:1;min-width:0;font:500 1rem var(--f-mono);padding:0 12px;min-height:48px;border:2px dashed var(--line);border-radius:4px;background:var(--bg);color:var(--ink)}
+.btn{border:2px solid var(--ink);background:transparent;color:var(--ink);font:600 .9rem var(--f-body);padding:9px 14px;border-radius:4px;align-items:center;justify-content:center}
+.btn:not([hidden]){display:inline-flex}
+.btn.solid{background:var(--ink);color:var(--surface)}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+button:focus-visible,input:focus-visible,select:focus-visible,label:focus-visible,.item:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hint{font-size:.85rem;color:var(--muted);margin:0}
+.flash{font:500 .95rem var(--f-body);padding:10px 12px;border-radius:4px;background:var(--chip);border-left:4px solid var(--ok)}
+.flash.err{border-left-color:var(--bad)}
+
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.toolbar h2{font:700 1.3rem var(--f-display);text-transform:uppercase;margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.filters button{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:500 .85rem var(--f-body);white-space:nowrap}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.search{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink)}
+.confirm{gap:8px;align-items:center;flex-wrap:wrap;font-size:.9rem;padding:10px 12px;background:var(--chip);border-radius:4px}
+.confirm:not([hidden]){display:flex}
+.order{font-size:.78rem;color:var(--muted)}
+
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.item{display:grid;grid-template-columns:5px 1fr auto;gap:0 12px;border-bottom:1px solid var(--line);cursor:pointer;background:var(--surface)}
+.item:last-child{border-bottom:0}
+.item .stripe{background:var(--line)}
+.item.scaduto .stripe{background:var(--bad)} .item.inscadenza .stripe{background:var(--warn)} .item.ok .stripe{background:var(--ok)}
+.item.hit{background:color-mix(in srgb,var(--accent) 18%,var(--surface))}
+.item .main{min-width:0;padding:10px 0;display:flex;flex-direction:column;gap:3px}
+.pname{font-weight:600;font-size:1rem;overflow-wrap:anywhere}
+.meta{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+.lotline{font-size:.88rem;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-variant-numeric:tabular-nums}
+.lotline .mono{font-family:var(--f-mono);font-size:.82rem}
+.chip{display:inline-block;font:600 .72rem var(--f-body);text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:3px;background:var(--chip);color:var(--muted)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.inscadenza{background:var(--warn-bg);color:var(--warn)} .chip.scaduto{background:var(--bad-bg);color:var(--bad)} .chip.aperto{background:var(--info-bg);color:var(--info)}
+.qtybox{padding:10px 12px 10px 0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;font-variant-numeric:tabular-nums}
+.qtybox b{font:700 1.6rem/1 var(--f-display)} .qtybox small{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.qtybox b.zero{color:var(--muted)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+
+details.settings{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+details.settings summary{font-weight:600;cursor:pointer}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
+
+/* Modulo a comparsa */
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font:600 .74rem var(--f-body);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.field input,.field select{font:inherit;font-size:1rem;padding:10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);min-height:46px;width:100%}
+.field input.mono{font-family:var(--f-mono)}
+.field input[readonly]{background:transparent;border-style:dashed}
+#sheetWrap{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);align-items:flex-end;justify-content:center}
+#sheetWrap:not([hidden]){display:flex}
+.sheet{background:var(--surface);color:var(--ink);width:100%;max-width:640px;max-height:92%;overflow-y:auto;border-radius:12px 12px 0 0;padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px);display:flex;flex-direction:column;gap:14px}
+.sheet h3{font:700 1.4rem/1.1 var(--f-display);text-transform:uppercase;margin:0}
+.sheet .code{font:500 .85rem var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
+.sheet fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.sheet legend{font:700 .8rem var(--f-body);text-transform:uppercase;letter-spacing:.08em;padding:0;margin-bottom:8px;color:var(--ink)}
+.note{font-size:.88rem;padding:8px 10px;border-radius:4px;background:var(--info-bg);color:var(--ink)}
+.note.warn{background:var(--warn-bg)} .note.bad{background:var(--bad-bg)}
+.sheet .bar{display:flex;gap:8px;position:sticky;bottom:calc(-16px - env(safe-area-inset-bottom,0px));background:var(--surface);padding:10px 0 4px;margin-top:4px}
+.sheet .bar .btn{flex:1;min-height:52px;font-size:1rem}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.ocrseen{margin-top:8px;font-size:.8rem}.ocrseen summary{cursor:pointer;color:var(--muted)}
+.ocrtext{font:400 .78rem var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;max-height:9em;overflow-y:auto}
+.quick .btn{flex:1}
+
+/* Scanner a schermo intero */
+#scanner{position:fixed;inset:0;background:#000;z-index:20;flex-direction:column}
+#scanner:not([hidden]){display:flex}
+#scanner video{flex:1;width:100%;height:100%;object-fit:cover;min-height:0}
+.frame{position:absolute;left:50%;top:42%;width:min(70vw,300px);aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid var(--accent);border-radius:12px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45);pointer-events:none}
+.sbar{position:absolute;left:0;right:0;bottom:0;padding:14px 16px calc(env(safe-area-inset-bottom,0px) + 16px);display:flex;flex-direction:column;gap:10px;background:linear-gradient(transparent,rgba(0,0,0,.85) 30%)}
+.slast{color:#fff;font:600 1rem var(--f-body);min-height:1.5em;text-align:center}
+.slast small{display:block;font-weight:400;opacity:.75}
+.srow{display:flex;gap:8px}
+.srow button{flex:1;min-height:50px;border-radius:6px;font:700 .95rem var(--f-display);text-transform:uppercase;letter-spacing:.04em;border:2px solid #fff;background:transparent;color:#fff}
+.srow button.on{background:#fff;color:#000}
+.srow .close{background:var(--accent);border-color:var(--accent);color:#1d2320}
+.stop{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;right:12px;display:flex;justify-content:space-between;gap:8px;color:#fff;font:600 .8rem var(--f-body);text-transform:uppercase;letter-spacing:.06em}
+.stop span{background:rgba(0,0,0,.55);padding:6px 10px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><span>Inventario</span> QR</h1>
+      <div class="sub">Reagenti e cartucce · laboratorio</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sLots">0</b><small>Lotti attivi</small></div>
+      <div class="stat warn"><b id="sWarn">0</b><small>In scadenza</small></div>
+      <div class="stat bad"><b id="sBad">0</b><small>Scaduti</small></div>
+    </div>
+  </header>
+
+  <div id="alert" class="alert" hidden></div>
+
+  <section class="panel" aria-label="Scansione">
+    <div class="seg" role="group" aria-label="Operazione predefinita">
+      <button data-act="carico" aria-pressed="true">Carico</button>
+      <button data-act="apertura" aria-pressed="false">Apertura</button>
+      <button data-act="scarico" aria-pressed="false">Scarico</button>
+    </div>
+    <button class="big" id="openScan">Apri scanner</button>
+    <form class="manual" id="manualForm">
+      <input id="manual" placeholder="Codice a mano o lettore USB" autocomplete="off" enterkeyhint="go" aria-label="Codice">
+      <button class="btn solid" type="submit">Avanti</button>
+    </form>
+    <p class="hint">Legge QR, DataMatrix e codici a barre. Lotto e scadenza si compilano da soli: dal codice GS1 del produttore oppure leggendo le scritte stampate sull'etichetta. Ogni lettura apre una scheda da confermare prima di salvare.</p>
+    <div id="flash" class="flash" hidden></div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:10px">
+    <div class="toolbar">
+      <h2>Magazzino</h2>
+      <div class="actions">
+        <button class="btn solid" id="exportBtn">Esporta Excel</button>
+        <button class="btn" id="shareBtn" hidden>Condividi</button>
+        <label class="btn" for="importFile" tabindex="0">Importa</label>
+        <input id="importFile" type="file" accept=".xlsx,.xls,.csv" hidden>
+      </div>
+    </div>
+    <div id="confirmBox" class="confirm" hidden></div>
+    <div class="filters" id="filters" role="group" aria-label="Filtro"></div>
+    <input id="search" class="search" type="search" placeholder="Cerca prodotto, ditta, lotto o codice" aria-label="Cerca">
+    <div class="order">Ordinati per prima scadenza: in alto quelli da usare per primi.</div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <details class="settings">
+    <summary>Impostazioni</summary>
+    <div class="grid2">
+      <div class="field"><label for="setOp">Operatore (va nel registro movimenti)</label><input id="setOp" autocomplete="name" placeholder="Nome e cognome"></div>
+      <div class="field"><label for="setWarn">Avvisa quanti giorni prima della scadenza</label><input id="setWarn" type="number" min="1" max="365" inputmode="numeric"></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn danger" id="clearBtn">Svuota tutto il magazzino</button></div>
+  </details>
+</div>
+
+<div id="scanner" hidden>
+  <video id="video" playsinline muted></video>
+  <div class="frame" id="frame"></div>
+  <div class="stop"><span id="sModeLabel">Carico</span><span id="sCount">0 registrati</span></div>
+  <div class="sbar">
+    <div class="slast" id="slast">Inquadra il codice della confezione</div>
+    <div class="srow">
+      <button data-sact="carico" class="on">Carico</button>
+      <button data-sact="apertura">Apertura</button>
+      <button data-sact="scarico">Scarico</button>
+    </div>
+    <div class="srow"><button id="torch" hidden>Luce</button><button class="close" id="closeScan">Fine</button></div>
+  </div>
+</div>
+
+<div id="sheetWrap" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div></div>
+<canvas id="cv" hidden></canvas>
+
+<script src="core.js"></script>
+<script src="lib/jsQR.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
+<script>
+'use strict';
+const C=window.Core;
+const KEY='inventario-lab-v2', OLDKEY='inventario-qr-v1';
+const TYPES=['Reagente','Cartuccia','Terreno di coltura','Kit diagnostico','Controllo / calibratore','Consumabile','Altro'];
+const ACT={carico:'Carico',apertura:'Apertura',scarico:'Scarico',modifica:'Modifica'};
+const $=id=>document.getElementById(id);
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+
+/* ---------- Dati ---------- */
+let S={products:{},lots:[],log:[],settings:{warn:30,operator:''}};
+try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.lots)S=Object.assign(S,s);}catch(e){}
+try{ // recupero dalla prima versione dell'app
+  if(!S.lots.length){const o=JSON.parse(localStorage.getItem(OLDKEY));
+    if(o&&Array.isArray(o.items)&&o.items.length){for(const it of o.items){S.products[it.code]={code:it.code,name:it.desc||'',maker:'',type:'',stab:''};S.lots.push({id:uid(),code:it.code,lot:'',exp:'',opened:'',qty:+it.qty||0,last:it.last||new Date().toISOString()})}}}
+}catch(e){}
+S.settings=Object.assign({warn:30,operator:''},S.settings||{});
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){flash('Memoria piena: esporta in Excel e svuota il registro.',true)}}
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+
+let defaultAct='carico', filter='attivi', lastHit=null;
+const prod=code=>S.products[code]||null;
+const status=l=>C.lotStatus(l,prod(l.code),+S.settings.warn||30);
+function logMove(action,lot,qty,note){
+  const p=prod(lot.code)||{};
+  S.log.push({t:new Date().toISOString(),op:S.settings.operator||'',action,code:lot.code,name:p.name||'',maker:p.maker||'',lot:lot.lot||'',exp:lot.exp||'',qty:qty==null?'':qty,note:note||''});
+  if(S.log.length>20000)S.log=S.log.slice(-20000);
+}
+function flash(msg,err){const f=$('flash');f.textContent=msg;f.className='flash'+(err?' err':'');f.hidden=false;clearTimeout(flash.t);flash.t=setTimeout(()=>f.hidden=true,5000)}
+function fmtTime(iso){const d=new Date(iso);return isNaN(d)?'':d.toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+
+/* ---------- Elenco ---------- */
+function daysText(st){
+  if(st.days==null)return 'Senza scadenza';
+  if(st.days<0)return `Scaduto da ${-st.days} gg`;
+  if(st.days===0)return 'Scade oggi';
+  return `Scade tra ${st.days} gg`;
+}
+function matches(l,q){
+  if(!q)return true;const p=prod(l.code)||{};
+  return [l.code,l.lot,p.name,p.maker,p.type].some(v=>(v||'').toLowerCase().includes(q));
+}
+function counts(){
+  const c={attivi:0,inscadenza:0,scaduti:0,aperti:0,esauriti:0};
+  for(const l of S.lots){
+    if(l.qty<=0){c.esauriti++;continue}
+    c.attivi++;const st=status(l);
+    if(st.level==='scaduto')c.scaduti++;else if(st.level==='inscadenza')c.inscadenza++;
+    if(l.opened)c.aperti++;
+  }
+  return c;
+}
+function render(){
+  const c=counts();
+  $('sLots').textContent=c.attivi;$('sWarn').textContent=c.inscadenza;$('sBad').textContent=c.scaduti;
+  const al=$('alert');al.innerHTML='';
+  if(c.scaduti||c.inscadenza){
+    al.hidden=false;al.className='alert'+(c.scaduti?'':' warn');
+    const parts=[];if(c.scaduti)parts.push(`${c.scaduti} ${c.scaduti===1?'lotto scaduto':'lotti scaduti'}`);
+    if(c.inscadenza)parts.push(`${c.inscadenza} in scadenza entro ${S.settings.warn} giorni`);
+    al.append(el('span',null,parts.join(' · ')));
+    const b=el('button',null,'Mostra');b.onclick=()=>{filter=c.scaduti?'scaduti':'inscadenza';render()};al.append(b);
+  }else al.hidden=true;
+
+  const fl=$('filters');fl.innerHTML='';
+  for(const [k,label] of [['attivi','In magazzino'],['inscadenza','In scadenza'],['scaduti','Scaduti'],['aperti','Aperti'],['esauriti','Esauriti']]){
+    const b=el('button',null,`${label} ${c[k]}`);b.setAttribute('aria-pressed',filter===k);b.onclick=()=>{filter=k;render()};fl.append(b);
+  }
+
+  const q=$('search').value.trim().toLowerCase();
+  let lots=S.lots.filter(l=>matches(l,q)).filter(l=>{
+    if(filter==='esauriti')return l.qty<=0;
+    if(l.qty<=0)return false;
+    const st=status(l);
+    if(filter==='inscadenza')return st.level==='inscadenza';
+    if(filter==='scaduti')return st.level==='scaduto';
+    if(filter==='aperti')return !!l.opened;
+    return true;
+  });
+  lots.sort((a,b)=>{const x=status(a).limit||'9999',y=status(b).limit||'9999';return x.localeCompare(y)||((prod(a.code)||{}).name||'').localeCompare((prod(b.code)||{}).name||'')});
+
+  const list=$('list');list.innerHTML='';
+  if(!lots.length){
+    list.append(el('div','empty',S.lots.length?'Nessun lotto in questo elenco.':'Magazzino vuoto. Apri lo scanner e inquadra la prima confezione per registrare un carico.'));
+  }
+  for(const l of lots){
+    const p=prod(l.code)||{},st=status(l);
+    const row=el('div','item '+(l.qty>0?st.level:'')+(l.id===lastHit?' hit':''));row.tabIndex=0;row.setAttribute('role','button');
+    row.append(el('div','stripe'));
+    const main=el('div','main');
+    main.append(el('div','pname',p.name||l.code));
+    const meta=[p.maker,p.type].filter(Boolean).join(' · ');
+    main.append(el('div','meta',meta||l.code));
+    const ll=el('div','lotline');
+    const lotS=el('span');lotS.append('Lotto ',el('span','mono',l.lot||'—'));ll.append(lotS);
+    ll.append(el('span',null,'Scad. '+(C.fmtIT(l.exp)||'—')));
+    if(l.qty>0)ll.append(el('span','chip '+(st.level==='nd'?'':st.level),daysText(st)));
+    main.append(ll);
+    if(l.opened){
+      const ol=el('div','lotline');ol.append(el('span','chip aperto','Aperto'));
+      let t='il '+C.fmtIT(l.opened);if(st.openLimit)t+=' · usare entro '+C.fmtIT(st.openLimit);
+      ol.append(el('span',null,t));main.append(ol);
+    }
+    row.append(main);
+    const qb=el('div','qtybox');const b=el('b',l.qty>0?'':'zero',String(l.qty));qb.append(b,el('small',null,'conf.'));row.append(qb);
+    const open=()=>openSheet({mode:'modifica',code:l.code,lotId:l.id});
+    row.onclick=open;row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}};
+    list.append(row);
+  }
+}
+$('search').oninput=render;
+
+/* ---------- Operazione predefinita ---------- */
+function setDefault(a){
+  defaultAct=a;
+  document.querySelectorAll('[data-act]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.act===a));
+  document.querySelectorAll('[data-sact]').forEach(b=>b.classList.toggle('on',b.dataset.sact===a));
+  $('sModeLabel').textContent=ACT[a];
+}
+document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>setDefault(b.dataset.act));
+document.querySelectorAll('[data-sact]').forEach(b=>b.onclick=()=>setDefault(b.dataset.sact));
+
+/* ---------- Scheda di conferma ---------- */
+let F=null; // stato della scheda aperta
+function lotsOf(code,withStock){return S.lots.filter(l=>l.code===code&&(!withStock||l.qty>0)).sort((a,b)=>(status(a).limit||'9999').localeCompare(status(b).limit||'9999'))}
+function field(id,label,input){const f=el('div','field');const lb=el('label',null,label);lb.htmlFor=id;input.id=id;f.append(lb,input);return f}
+function inp(type,value,attrs){const i=el('input');i.type=type;i.value=value==null?'':value;Object.assign(i,attrs||{});return i}
+
+function openSheet(o){
+  // o: {mode, code, scan:{lot,exp,name,maker}, lotId, editableCode}
+  F=Object.assign({scan:{}},o);
+  if(F.mode!=='modifica'&&F.mode!=='carico'&&!F.editableCode&&!lotsOf(F.code,true).length&&!prod(F.code)){F.mode='carico';F.note='Prodotto nuovo: registra prima il carico.'}
+  drawSheet();
+  $('sheetWrap').hidden=false;document.body.classList.add('locked');
+}
+function closeSheet(){
+  $('sheetWrap').hidden=true;F=null;
+  if(!$('scanner').hidden)resumeScan();else document.body.classList.remove('locked');
+}
+$('sheetWrap').addEventListener('click',e=>{if(e.target.id==='sheetWrap')closeSheet()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&F)closeSheet()});
+
+function drawSheet(){
+  const sh=$('sheet');sh.innerHTML='';
+  const p=prod(F.code)||{}, sc=F.scan||{};
+  const head=el('div');
+  const h=el('h3',null,F.mode==='modifica'?'Lotto in magazzino':ACT[F.mode]);h.id='sheetTitle';head.append(h);
+  if(!F.editableCode)head.append(el('div','code',F.code));
+  sh.append(head);
+
+  if(F.mode!=='modifica'){
+    const seg=el('div','seg');seg.setAttribute('role','group');
+    for(const a of ['carico','apertura','scarico']){const b=el('button',null,ACT[a]);b.type='button';b.setAttribute('aria-pressed',F.mode===a);b.onclick=()=>{readProductFields();F.mode=a;F.note='';drawSheet()};seg.append(b)}
+    sh.append(seg);
+  }
+  if(F.note)sh.append(el('div','note',F.note));
+
+  // Prodotto
+  const fp=el('fieldset');fp.append(el('legend',null,'Prodotto'));
+  if(F.editableCode)fp.append(field('fCode','Codice',inp('text',F.code||'',{className:'mono',autocapitalize:'characters'})));
+  fp.append(field('fName','Nome prodotto',inp('text',F.draft?.name??(p.name||sc.name||''),{placeholder:'Es. Cartuccia BCID2'})));
+  fp.append(field('fMaker','Ditta produttrice',inp('text',F.draft?.maker??(p.maker||sc.maker||''),{placeholder:'Es. bioMérieux'})));
+  const two=el('div','grid2');two.style.marginTop='0';
+  const sel=el('select');sel.append(new Option('—',''));for(const t of TYPES)sel.append(new Option(t,t));sel.value=F.draft?.type??(p.type||'');
+  two.append(field('fType','Tipo',sel));
+  two.append(field('fStab','Stabilità dopo apertura (giorni)',inp('number',F.draft?.stab??(p.stab||''),{min:0,inputMode:'numeric',placeholder:'Facoltativo'})));
+  fp.append(two);
+  sh.append(fp);
+
+  // Lotto
+  const fl=el('fieldset');fl.append(el('legend',null,'Lotto'));
+  const today=C.todayISO();
+  if(F.mode==='carico'){
+    const g=el('div','grid2');g.style.marginTop='0';
+    g.append(field('fLot','Lotto',inp('text',sc.lot||'',{className:'mono',autocapitalize:'characters',required:true})));
+    g.append(field('fExp','Scadenza',inp('date',sc.exp||'',{required:true})));
+    g.append(field('fQty','Confezioni caricate',inp('number',1,{min:1,inputMode:'numeric'})));
+    fl.append(g);
+    if(sc.source==='gs1'&&(sc.lot||sc.exp))fl.append(el('div','note','Lotto e scadenza letti dal codice del produttore: controlla che corrispondano all\'etichetta.'));
+    const box=el('div');box.id='ocrBox';fl.append(box);
+    const fileIn=el('input');fileIn.type='file';fileIn.accept='image/*';fileIn.setAttribute('capture','environment');fileIn.hidden=true;
+    const photoBtn=el('button','btn','Leggi scadenza e lotto dalla foto');photoBtn.type='button';
+    photoBtn.onclick=()=>{suspendCamera();fileIn.click()};
+    fileIn.onchange=async()=>{
+      const f=fileIn.files[0];fileIn.value='';if(!f)return;
+      try{const bmp=await createImageBitmap(f);const c=document.createElement('canvas');const k=Math.min(1,2000/Math.max(bmp.width,bmp.height));
+        c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);runOCR(c,true)}
+      catch(e){F.ocr={state:'error'};renderOcr()}
+    };
+    const row=el('div','quick');row.append(photoBtn,fileIn);fl.append(row);
+    renderOcr();
+    if(F.snap&&!F.ocr&&!sc.exp){const f=F;f.ocr={state:'running'};setTimeout(()=>{if(F===f)runOCR(f.snap,false)},0)}
+  }else if(F.mode==='apertura'||F.mode==='scarico'){
+    const avail=lotsOf(F.code,true);
+    if(!avail.length){
+      fl.append(el('div','note warn','Nessun lotto di questo prodotto risulta in magazzino. Registra prima un carico.'));
+    }else{
+      const s=el('select');
+      for(const l of avail){const st=status(l);s.append(new Option(`Lotto ${l.lot||'—'} · scad. ${C.fmtIT(l.exp)||'—'} · ${l.qty} conf.${l.opened?' · aperto':''}`,l.id))}
+      const match=sc.lot&&avail.find(l=>l.lot===sc.lot);
+      s.value=(match||avail[0]).id;
+      fl.append(field('fLotSel','Lotto',s));
+      if(sc.lot&&!match)fl.append(el('div','note warn',`Il lotto letto (${sc.lot}) non è in magazzino. Scegli il lotto giusto o registra un carico.`));
+      else if(!match&&avail.length>1)fl.append(el('div','note','Proposto il lotto con la scadenza più vicina.'));
+      const chosen=(match||avail[0]),stc=status(chosen);
+      if(stc.level==='scaduto')fl.append(el('div','note bad','Attenzione: questo lotto risulta scaduto.'));
+      if(F.mode==='apertura')fl.append(field('fOpened','Data di apertura',inp('date',today,{max:today})));
+      else fl.append(field('fQty','Confezioni scaricate',inp('number',1,{min:1,max:chosen.qty,inputMode:'numeric'})));
+      s.onchange=()=>{const l=S.lots.find(x=>x.id===s.value);const q=$('fQty');if(q&&l)q.max=l.qty};
+    }
+  }else{ // modifica
+    const l=S.lots.find(x=>x.id===F.lotId);
+    const quick=el('div','quick');
+    const bOpen=el('button','btn',l.opened?'Aperto oggi (nuova conf.)':'Segna aperto oggi');bOpen.type='button';
+    bOpen.onclick=()=>{readProductFields(true);l.opened=today;l.last=new Date().toISOString();logMove('Apertura',l,1);done(`Aperto: ${prodName(l)} · lotto ${l.lot||'—'}`,l)};
+    const bOut=el('button','btn','Scarica 1');bOut.type='button';bOut.disabled=l.qty<=0;
+    bOut.onclick=()=>{readProductFields(true);l.qty=Math.max(0,l.qty-1);l.last=new Date().toISOString();logMove('Scarico',l,1);done(`Scaricato 1: ${prodName(l)} · restano ${l.qty}`,l)};
+    quick.append(bOpen,bOut);fl.append(quick);
+    const g=el('div','grid2');g.style.marginTop='0';
+    g.append(field('fLot','Lotto',inp('text',l.lot,{className:'mono',autocapitalize:'characters'})));
+    g.append(field('fExp','Scadenza',inp('date',l.exp)));
+    g.append(field('fOpened','Data di apertura',inp('date',l.opened,{max:today})));
+    g.append(field('fQty','Confezioni in magazzino',inp('number',l.qty,{min:0,inputMode:'numeric'})));
+    fl.append(g);
+    const del=el('button','btn danger','Elimina questo lotto');del.type='button';
+    del.onclick=()=>{if(del.dataset.armed){S.lots=S.lots.filter(x=>x!==l);logMove('Eliminato',l,l.qty,'Lotto rimosso dall\'inventario');save();render();closeSheet();flash('Lotto eliminato.')}else{del.dataset.armed=1;del.textContent='Tocca di nuovo per confermare'}};
+    fl.append(del);
+  }
+  sh.append(fl);renderOcr();
+
+  const bar=el('div','bar');
+  const cancel=el('button','btn','Annulla');cancel.type='button';cancel.onclick=closeSheet;
+  const ok=el('button','btn solid','Salva');ok.type='button';ok.onclick=submitSheet;
+  if((F.mode==='apertura'||F.mode==='scarico')&&!lotsOf(F.code,true).length){ok.textContent='Vai al carico';ok.onclick=()=>{readProductFields();F.mode='carico';drawSheet()}}
+  bar.append(cancel,ok);sh.append(bar);
+  setTimeout(()=>{if(!F||!$("fName"))return;const first=F.editableCode?$('fCode'):(!$('fName').value?$('fName'):null);if(first)first.focus()},50);
+}
+function prodName(l){return (prod(l.code)||{}).name||l.code}
+function readProductFields(commit){
+  if(!$('fName'))return;
+  F.draft={name:$('fName').value.trim(),maker:$('fMaker').value.trim(),type:$('fType').value,stab:$('fStab').value};
+  if(commit){
+    const code=F.code;const old=prod(code)||{code};
+    S.products[code]=Object.assign(old,{code,name:F.draft.name,maker:F.draft.maker,type:F.draft.type,stab:F.draft.stab===''?'':Math.max(0,parseInt(F.draft.stab)||0)});
+  }
+}
+function done(msg,lot){lastHit=lot?lot.id:null;save();render();closeSheet();flash(msg);scanFeedback(msg)}
+function fail(msg,id){flash(msg,true);const f=id&&$(id);if(f){f.focus();f.style.borderColor='var(--bad)'}}
+
+function submitSheet(){
+  if(F.editableCode){const c=$('fCode').value.trim();if(!c)return fail('Inserisci il codice del prodotto.','fCode');F.code=c}
+  readProductFields(false);
+  if(!F.draft.name)return fail('Scrivi il nome del prodotto.','fName');
+  const now=new Date().toISOString();
+  if(F.mode==='carico'){
+    const lotN=$('fLot').value.trim(),exp=$('fExp').value,qty=parseInt($('fQty').value)||0;
+    if(!lotN)return fail('Inserisci il numero di lotto.','fLot');
+    if(!exp)return fail('Inserisci la data di scadenza.','fExp');
+    if(qty<1)return fail('La quantità deve essere almeno 1.','fQty');
+    readProductFields(true);
+    let l=S.lots.find(x=>x.code===F.code&&x.lot===lotN);
+    if(l){if(l.exp&&l.exp!==exp&&!F.expConfirmed){F.expConfirmed=true;return fail(`Questo lotto era registrato con scadenza ${C.fmtIT(l.exp)}. Premi di nuovo Salva per aggiornarla.`,'fExp')}
+      l.exp=exp;l.qty+=qty;l.last=now;}
+    else{l={id:uid(),code:F.code,lot:lotN,exp,opened:'',qty,last:now};S.lots.push(l)}
+    logMove('Carico',l,qty);
+    const st=status(l);
+    done(`Caricato: ${F.draft.name} · lotto ${lotN} · +${qty} (totale ${l.qty})${st.level==='scaduto'?' · ATTENZIONE: già scaduto':''}`,l);
+  }else if(F.mode==='apertura'||F.mode==='scarico'){
+    const l=S.lots.find(x=>x.id===$('fLotSel').value);if(!l)return;
+    readProductFields(true);
+    if(F.mode==='apertura'){
+      const d=$('fOpened').value||C.todayISO();l.opened=d;l.last=now;logMove('Apertura',l,1,'Aperto il '+C.fmtIT(d));
+      const st=status(l);
+      done(`Aperto: ${F.draft.name} · lotto ${l.lot}${st.openLimit?' · usare entro '+C.fmtIT(st.openLimit):''}`,l);
+    }else{
+      const qty=parseInt($('fQty').value)||0;
+      if(qty<1)return fail('La quantità deve essere almeno 1.','fQty');
+      if(qty>l.qty)return fail(`${l.qty===1?'Di questo lotto in magazzino c\'è solo 1 confezione.':'Di questo lotto in magazzino ci sono solo '+l.qty+' confezioni.'}`,'fQty');
+      l.qty-=qty;l.last=now;logMove('Scarico',l,qty);
+      done(`Scaricato: ${F.draft.name} · lotto ${l.lot} · −${qty} (restano ${l.qty})`,l);
+    }
+  }else{
+    const l=S.lots.find(x=>x.id===F.lotId);
+    const lotN=$('fLot').value.trim(),exp=$('fExp').value,op=$('fOpened').value,qty=Math.max(0,parseInt($('fQty').value)||0);
+    readProductFields(true);
+    const changes=[];
+    if(lotN!==l.lot)changes.push(`lotto ${l.lot||'—'}→${lotN||'—'}`);
+    if(exp!==l.exp)changes.push(`scadenza ${C.fmtIT(l.exp)||'—'}→${C.fmtIT(exp)||'—'}`);
+    if(op!==l.opened)changes.push(`apertura ${C.fmtIT(l.opened)||'—'}→${C.fmtIT(op)||'—'}`);
+    if(qty!==l.qty)changes.push(`quantità ${l.qty}→${qty}`);
+    Object.assign(l,{lot:lotN,exp,opened:op,qty,last:now});
+    if(changes.length)logMove('Correzione',l,'',changes.join('; '));
+    done('Modifiche salvate.',l);
+  }
+}
+
+/* ---------- Lettura del testo dell'etichetta (OCR, funziona offline) ---------- */
+let ocrP=null;
+function loadScript(src){return new Promise((res,rej)=>{const t=document.createElement('script');t.src=src;t.onload=res;t.onerror=()=>rej(new Error('load'));document.head.append(t)})}
+function getOCR(){
+  if(!ocrP){
+    const base=new URL('lib/ocr',location.href).href;
+    ocrP=(window.Tesseract?Promise.resolve():loadScript('lib/ocr/tesseract.min.js'))
+      .then(()=>Tesseract.createWorker('eng',1,{workerPath:base+'/worker.min.js',corePath:base,langPath:base,gzip:true}))
+      .catch(e=>{ocrP=null;throw e});
+  }
+  return ocrP;
+}
+// Prepara l'immagine per la lettura: ruota, ingrandisce il testo piccolo, toglie i colori e aumenta il contrasto
+function prepCanvas(src,deg){
+  const sw=src.width,sh=src.height;
+  const k=Math.min(2,2200/Math.max(sw,sh));
+  const w=Math.round(sw*k),h=Math.round(sh*k),side=deg%180!==0;
+  const c=document.createElement('canvas');c.width=side?h:w;c.height=side?w:h;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.imageSmoothingQuality='high';x.translate(c.width/2,c.height/2);x.rotate(deg*Math.PI/180);x.drawImage(src,-w/2,-h/2,w,h);
+  const img=x.getImageData(0,0,c.width,c.height),d=img.data,hist=new Uint32Array(256),n=d.length/4;
+  for(let q=0;q<d.length;q+=4){const g=(d[q]*299+d[q+1]*587+d[q+2]*114)/1000|0;d[q]=g;hist[g]++}
+  let lo=0,hi=255,acc=0;while(lo<254&&(acc+=hist[lo])<n*.02)lo++;acc=0;while(hi>lo+1&&(acc+=hist[hi])<n*.02)hi--;
+  const span=hi-lo;
+  for(let q=0;q<d.length;q+=4){let g=(d[q]-lo)*255/span;g=g<0?0:g>255?255:g;d[q]=d[q+1]=d[q+2]=g}
+  x.putImageData(img,0,0);return c;
+}
+async function runOCR(src,manual){
+  const token=F;if(!token)return;
+  token.ocr={state:'running',step:0};renderOcr();
+  try{
+    const w=await getOCR();
+    let r=null,text='';
+    const turns=[0,90,270,180]; // se non trova date prova a girare l'immagine (etichette in verticale o capovolte)
+    for(let k=0;k<turns.length;k++){
+      if(F!==token)return;
+      token.ocr={state:'running',step:k};renderOcr();
+      const {data}=await w.recognize(prepCanvas(src,turns[k]));
+      const rr=C.extractLabelInfo(data.text);
+      if(!r||rr.candidates.length||(!r.lot&&rr.lot)){r=rr;text=data.text}
+      if(rr.candidates.length)break;
+    }
+    if(F!==token)return;
+    const o={state:'done',res:r,text:text.trim(),filled:false,lotFilled:false};
+    const fe=$('fExp'),fl=$('fLot');
+    if(r.exp&&(manual||!(fe?fe.value:token.scan.exp))){if(fe)fe.value=r.exp;token.scan.exp=r.exp;o.filled=true}
+    if(r.lot&&(manual||!(fl?fl.value:token.scan.lot))){if(fl)fl.value=r.lot;token.scan.lot=r.lot;o.lotFilled=true}
+    token.ocr=o;
+  }catch(e){if(F!==token)return;token.ocr={state:'error',msg:String(e&&e.message||e)}}
+  renderOcr();
+}
+function renderOcr(){
+  const box=$('ocrBox');if(!box||!F)return;box.innerHTML='';
+  const o=F.ocr;if(!o)return;
+  if(o.state==='running'){box.append(el('div','note',o.step?`Non trovo date, provo a girare l'immagine (${o.step+1}/4)…`:'Leggo scadenza e lotto dalle scritte dell\'etichetta…'));return}
+  if(o.state==='error'){const n=el('div','note warn','Non sono riuscito ad avviare la lettura del testo. Scrivi la scadenza a mano o riprova con una foto.');if(o.msg)n.append(el('div','ocrtext','Dettaglio: '+o.msg));box.append(n);return}
+  const r=o.res;
+  const seen=()=>{const dt=el('details','ocrseen');dt.append(el('summary',null,'Testo letto dall\'etichetta'),el('div','ocrtext',o.text||'(nessun testo riconosciuto)'));return dt};
+  const lotChips=n=>{
+    if(!r.lots||r.lots.length<2)return;
+    n.append(el('div',null,'Lotti trovati: tocca quello giusto.'));
+    const ch=el('div','quick');ch.style.marginTop='6px';
+    for(const v of r.lots){const b=el('button','btn',v);b.type='button';b.onclick=()=>{const fl=$('fLot');if(fl)fl.value=v;F.scan.lot=v;r.lot=v;o.lotFilled=true;renderOcr()};ch.append(b)}
+    n.append(ch);
+  };
+  if(!r.candidates.length){
+    const n=el('div','note warn',(o.lotFilled?`Lotto letto: ${r.lot}. `:'')+'Non ho trovato una data sull\'etichetta. Premi "Leggi scadenza e lotto dalla foto" e fotografa da vicino la scritta della scadenza, dritta e ben illuminata.');
+    lotChips(n);n.append(seen());box.append(n);return}
+  const n=el('div','note'+(o.filled&&(r.confident||r.candidates.length===1)?'':' warn'));
+  let msg;
+  if(o.filled&&(r.confident||r.candidates.length===1))msg=`Scadenza letta dall'etichetta: ${C.fmtIT(r.exp)}. Controlla che sia giusta.`;
+  else if(o.filled)msg=`Ho trovato più date e ho scelto ${C.fmtIT(r.exp)}. Controlla, o tocca quella giusta.`;
+  else msg='Date trovate sull\'etichetta: tocca quella di scadenza.';
+  if(o.lotFilled)msg+=` Lotto letto: ${r.lot}.`;
+  n.append(el('span',null,msg));
+  if(r.candidates.length>1||!o.filled){
+    const chips=el('div','quick');chips.style.marginTop='8px';
+    for(const iso of r.candidates){const b=el('button','btn',C.fmtIT(iso));b.type='button';
+      b.onclick=()=>{const fe=$('fExp');if(fe)fe.value=iso;F.scan.exp=iso;r.exp=iso;r.confident=true;o.filled=true;renderOcr()};chips.append(b)}
+    n.append(chips);
+  }
+  lotChips(n);
+  n.append(seen());
+  box.append(n);
+}
+
+/* ---------- Inserimento da tastiera o lettore USB ---------- */
+$('manualForm').addEventListener('submit',e=>{
+  e.preventDefault();const raw=$('manual').value;$('manual').value='';
+  const s=C.parseScan(raw);
+  if(!s){openSheet({mode:'carico',code:'',editableCode:true});return}
+  openSheet({mode:defaultAct,code:s.code,scan:s});
+});
+
+/* ---------- Scanner fotocamera ---------- */
+let stream=null,track=null,running=false,paused=false,detector=null,sessionCount=0;
+const recent=new Map();
+let audioCtx=null;
+function beep(){
+  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=1500;g.gain.value=.12;
+    o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+.09);}catch(e){}
+  if(navigator.vibrate)navigator.vibrate(60);
+}
+function scanFeedback(msg){
+  if($('scanner').hidden)return;
+  sessionCount++;$('sCount').textContent=sessionCount+' registrati';
+  $('slast').textContent=msg;
+}
+let suspended=false;
+async function startCamera(){
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false})}
+  catch(e){flash(e.name==='NotAllowedError'?'Permesso fotocamera negato. Abilitalo nelle impostazioni del sito o dell\'app.':'Fotocamera non disponibile.',true);return false}
+  track=stream.getVideoTracks()[0];suspended=false;
+  try{const caps=track.getCapabilities?track.getCapabilities():{};if(caps.focusMode&&caps.focusMode.includes('continuous'))await track.applyConstraints({advanced:[{focusMode:'continuous'}]});$('torch').hidden=!caps.torch}catch(e){$('torch').hidden=true}
+  const v=$('video');v.srcObject=stream;await v.play().catch(()=>{});
+  return true;
+}
+// Spegne la fotocamera senza chiudere lo scanner (es. mentre si scatta una foto dell'etichetta)
+function suspendCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;track=null;suspended=true;torchOn=false;$('torch').classList.remove('on')}}
+async function openScanner(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){flash('Questo browser non può usare la fotocamera. Apri l\'app da Chrome con indirizzo https.',true);return}
+  if(!await startCamera())return;
+  $('scanner').hidden=false;document.body.classList.add('locked');
+  sessionCount=0;$('sCount').textContent='0 registrati';$('slast').textContent='Inquadra il codice della confezione';
+  if('BarcodeDetector' in window&&!detector){
+    try{const fm=await BarcodeDetector.getSupportedFormats();detector=new BarcodeDetector({formats:fm.length?fm:['qr_code']})}catch(e){detector=null}
+  }
+  if(defaultAct==='carico')getOCR().catch(()=>{}); // prepara la lettura del testo in anticipo
+  running=true;paused=false;loop();
+}
+function closeScanner(){
+  running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;suspended=false;torchOn=false;$('torch').classList.remove('on');
+  $('scanner').hidden=true;if(!F)document.body.classList.remove('locked');
+  if(sessionCount)flash(`Sessione chiusa: ${sessionCount} operazioni registrate.`);
+}
+async function resumeScan(){
+  if(suspended&&running){if(!await startCamera()){closeScanner();return}}
+  for(const k of recent.keys())recent.set(k,Date.now());paused=false;
+}
+// Copia del fotogramma corrente, usata per leggere scadenza e lotto stampati sull'etichetta
+function grabFrame(v){
+  try{const c=document.createElement('canvas');const s=Math.min(1,1800/Math.max(v.videoWidth,v.videoHeight));
+    c.width=Math.round(v.videoWidth*s);c.height=Math.round(v.videoHeight*s);c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c}catch(e){return null}
+}
+async function detect(v){
+  if(detector){try{const r=await detector.detect(v);if(r.length)return r[0].rawValue}catch(e){detector=null}}
+  const cv=$('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});
+  const s=Math.min(1,900/Math.max(v.videoWidth,v.videoHeight));
+  cv.width=Math.round(v.videoWidth*s);cv.height=Math.round(v.videoHeight*s);
+  ctx.drawImage(v,0,0,cv.width,cv.height);
+  const d=ctx.getImageData(0,0,cv.width,cv.height);
+  const r=jsQR(d.data,d.width,d.height,{inversionAttempts:'dontInvert'});
+  return r?r.data:null;
+}
+async function loop(){
+  if(!running)return;
+  const v=$('video');
+  if(!paused&&!F&&v.readyState>=2&&v.videoWidth){
+    const raw=await detect(v);
+    if(raw&&running&&!F){
+      const t=Date.now(),key=raw.trim();
+      if(!recent.has(key)||t-recent.get(key)>2500){
+        recent.set(key,t);const s=C.parseScan(key);
+        if(s){beep();paused=true;openSheet({mode:defaultAct,code:s.code,scan:s,snap:grabFrame(v)})}
+      }else recent.set(key,t);
+    }
+  }
+  setTimeout(()=>requestAnimationFrame(loop),120);
+}
+let torchOn=false;
+$('torch').onclick=async()=>{try{torchOn=!torchOn;await track.applyConstraints({advanced:[{torch:torchOn}]});$('torch').classList.toggle('on',torchOn)}catch(e){torchOn=false}};
+$('openScan').onclick=openScanner;$('closeScan').onclick=closeScanner;
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&running){if(F)suspendCamera();else closeScanner()}});
+
+/* ---------- Excel ---------- */
+const XLSXMIME='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+function stamp(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function fileName(){return `Inventario_laboratorio_${stamp()}.xlsx`}
+function serial(iso){const n=C.toDayNum(iso);return n==null?'':n+25569}
+function statusText(l){if(l.qty<=0)return 'Esaurito';const st=status(l);return {scaduto:'Scaduto',inscadenza:'In scadenza',ok:'OK',nd:'Senza scadenza'}[st.level]}
+function sheetFrom(rows,dateCols,widths){
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  for(let r=1;r<rows.length;r++)for(const c of dateCols){const ref=XLSX.utils.encode_cell({r,c});const cell=ws[ref];if(cell&&cell.t==='n')cell.z='dd/mm/yyyy'}
+  ws['!cols']=widths.map(w=>({wch:w}));ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};
+  return ws;
+}
+function buildBlob(){
+  const lots=[...S.lots].sort((a,b)=>(status(a).limit||'9999').localeCompare(status(b).limit||'9999'));
+  const inv=[['Codice','Prodotto','Ditta','Tipo','Lotto','Scadenza','Data apertura','Stabilità dopo apertura (gg)','Usare entro','Confezioni','Stato']];
+  for(const l of lots){const p=prod(l.code)||{},st=status(l);
+    inv.push([l.code,p.name||'',p.maker||'',p.type||'',l.lot||'',serial(l.exp),serial(l.opened),p.stab===''||p.stab==null?'':+p.stab,serial(st.limit),+l.qty||0,statusText(l)])}
+  const mov=[['Data e ora','Operatore','Operazione','Codice','Prodotto','Ditta','Lotto','Scadenza','Confezioni','Note']];
+  for(const m of [...S.log].reverse())mov.push([fmtTime(m.t),m.op,m.action,m.code,m.name,m.maker,m.lot,serial(m.exp),m.qty,m.note]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,sheetFrom(inv,[5,6,8],[16,30,18,18,14,12,13,12,12,11,14]),'Inventario');
+  XLSX.utils.book_append_sheet(wb,sheetFrom(mov,[7],[17,18,12,16,30,18,14,12,11,40]),'Movimenti');
+  return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})],{type:XLSXMIME});
+}
+$('exportBtn').onclick=()=>{
+  if(!S.lots.length){flash('Il magazzino è vuoto.',true);return}
+  const url=URL.createObjectURL(buildBlob()),a=document.createElement('a');
+  a.href=url;a.download=fileName();document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+  flash('File Excel salvato nei Download: '+fileName());
+};
+try{if(navigator.canShare&&navigator.canShare({files:[new File(['x'],'x.xlsx',{type:XLSXMIME})]}))$('shareBtn').hidden=false}catch(e){}
+$('shareBtn').onclick=async()=>{
+  if(!S.lots.length){flash('Il magazzino è vuoto.',true);return}
+  try{await navigator.share({files:[new File([buildBlob()],fileName(),{type:XLSXMIME})],title:'Inventario laboratorio'})}
+  catch(e){if(e.name!=='AbortError')flash('Condivisione non riuscita.',true)}
+};
+
+function askConfirm(text,okLabel,fn){
+  const box=$('confirmBox');box.innerHTML='';box.append(el('span',null,text));
+  const y=el('button','btn solid',okLabel),n=el('button','btn','Annulla');
+  y.onclick=()=>{box.hidden=true;fn()};n.onclick=()=>box.hidden=true;box.append(y,n);box.hidden=false;box.scrollIntoView({block:'nearest'});
+}
+$('importFile').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  let rows;
+  try{const wb=XLSX.read(await f.arrayBuffer());const name=wb.SheetNames.find(n=>/inventario/i.test(n))||wb.SheetNames[0];rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{raw:true,defval:''})}
+  catch(err){flash('Non riesco ad aprire questo file.',true);return}
+  const products={},lots=[];
+  for(const r of rows){
+    const k={};for(const [a,b] of Object.entries(r))k[a.toLowerCase().replace(/\s*\(.*\)/,'').trim()]=b;
+    const code=String(k['codice']??'').trim();if(!code)continue;
+    const stabRaw=k['stabilità dopo apertura']??k['stabilita dopo apertura']??'';
+    products[code]=Object.assign(products[code]||{},{code,name:String(k['prodotto']??k['descrizione']??'').trim(),maker:String(k['ditta']??k['ditta produttrice']??'').trim(),type:String(k['tipo']??'').trim(),stab:stabRaw===''?'':parseInt(stabRaw)||0});
+    lots.push({id:uid(),code,lot:String(k['lotto']??'').trim(),exp:C.parseDate(k['scadenza']),opened:C.parseDate(k['data apertura']),qty:parseInt(k['confezioni']??k['quantità']??k['quantita']??0)||0,last:new Date().toISOString()});
+  }
+  if(!lots.length){flash('Nel file non ho trovato una colonna "Codice".',true);return}
+  askConfirm(`Sostituire il magazzino attuale con ${lots.length} lotti dal file? Il registro movimenti viene conservato.`,'Sostituisci',()=>{
+    S.products=products;S.lots=lots;S.log.push({t:new Date().toISOString(),op:S.settings.operator||'',action:'Importazione',code:'',name:'',maker:'',lot:'',exp:'',qty:'',note:`${lots.length} lotti da ${f.name}`});
+    lastHit=null;save();render();flash(`Importati ${lots.length} lotti.`);
+  });
+});
+
+/* ---------- Impostazioni ---------- */
+$('setOp').value=S.settings.operator||'';$('setWarn').value=S.settings.warn;
+$('setOp').onchange=()=>{S.settings.operator=$('setOp').value.trim();save()};
+$('setWarn').onchange=()=>{S.settings.warn=Math.min(365,Math.max(1,parseInt($('setWarn').value)||30));$('setWarn').value=S.settings.warn;save();render()};
+$('clearBtn').onclick=()=>{$('clearBtn').closest('details').open=true;askConfirm('Cancellare tutti i lotti, i prodotti e il registro movimenti? Esporta prima in Excel se ti serve una copia.','Sì, svuota',()=>{S.products={};S.lots=[];S.log=[];save();render();flash('Magazzino svuotato.')});};
+
+render();
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+</script>
+</body>
+</html>

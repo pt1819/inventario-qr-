@@ -175,6 +175,30 @@
     return res;
   }
 
+
+  // Numero di lotto: dopo LOT, LOTTO, N. LOTTO, LOT N°, BATCH, CH.-B., oppure "L." / "L:" / "L " seguito dal numero
+  function findLots(text) {
+    const T = String(text || '').toUpperCase();
+    const out = [];
+    const TOKEN = '([A-Z0-9][A-Z0-9\\-\\/.]{1,24})';
+    const patterns = [
+      [new RegExp('(?:\\bN[O°º.]?\\s*(?:DI\\s*)?LOTTO|\\bLOT(?:TO)?|\\bBATCH|\\bCH\\.?\\s?-?\\s?B\\.?|\\bCHARGE|\\bLOTE)\\b\\s*(?:N\\s?[O°º.]?\\s*)?(?:NUMBER|NO\\.?)?\\s*[:#.\\-\\])|]*\\s*' + TOKEN, 'g'), 3],
+      [new RegExp('(?:^|[^A-Z0-9])L\\s?[.:]\\s*' + TOKEN, 'gm'), 2],     // L. 12345 / L:12345
+      [new RegExp('(?:^|[^A-Z0-9])L\\s+' + TOKEN, 'gm'), 1]                // L 12345 (meno sicuro)
+    ];
+    for (const [re, prio] of patterns) {
+      let m;
+      while ((m = re.exec(T))) {
+        let v = m[1].replace(/[.\-\/]+$/, '');
+        if (v.length < 3 || !/[0-9]/.test(v)) continue;             // un lotto ha almeno 3 caratteri e qualche cifra
+        if (/^(19|20)\d\d[-\/.]\d/.test(v) || /^\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}$/.test(v)) continue; // è una data, non un lotto
+        if (!out.some(o => o.v === v)) out.push({ v, prio, i: m.index });
+      }
+    }
+    out.sort((a, b) => b.prio - a.prio || a.i - b.i);
+    return out.map(o => o.v);
+  }
+
   // Restituisce la scadenza più probabile, le alternative e il lotto letto
   function extractLabelInfo(text, today) {
     today = today || todayISO();
@@ -204,12 +228,11 @@
     for (const c of scored) if (!uniq.some(u => u.iso === c.iso)) uniq.push(c);
     const best = uniq[0] && !uniq[0].mfg ? uniq[0] : null;
 
-    let lot = '';
-    const lm = /(?:\bLOT(?:TO)?|\bBATCH|\bCH\.?-?B\.?|\bCHARGE)\b\s*(?:N[O°º.]?\s*)?[:#.\-]?\s*([A-Z0-9][A-Z0-9\-\/.]{2,24})/.exec(T);
-    if (lm) lot = lm[1].replace(/[.\-\/]+$/, '');
-    return { exp: best ? best.iso : '', confident: !!(best && best.exp), candidates: uniq.slice(0, 4).map(c => c.iso), lot };
+    const lots = findLots(T);
+    const lot = lots[0] || '';
+    return { exp: best ? best.iso : '', confident: !!(best && best.exp), candidates: uniq.slice(0, 4).map(c => c.iso), lot, lots: lots.slice(0, 4) };
   }
 
-  const api = { todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus, findDates, extractLabelInfo };
+  const api = { todayISO, toDayNum, fromDayNum, addDays, fmtIT, parseDate, parseGS1, parseScan, lotStatus, findDates, findLots, extractLabelInfo };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);
