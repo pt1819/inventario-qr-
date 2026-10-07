@@ -114,6 +114,7 @@ details.settings summary{font-weight:600;cursor:pointer}
 .sheet .bar{display:flex;gap:8px;position:sticky;bottom:calc(-16px - env(safe-area-inset-bottom,0px));background:var(--surface);padding:10px 0 4px;margin-top:4px}
 .sheet .bar .btn{flex:1;min-height:52px;font-size:1rem}
 .quick{display:flex;gap:8px;flex-wrap:wrap}
+.btn.photo{flex:1;min-height:48px;font-size:.95rem}
 .ocrseen{margin-top:8px;font-size:.8rem}.ocrseen summary{cursor:pointer;color:var(--muted)}
 .ocrtext{font:400 .78rem var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;max-height:9em;overflow-y:auto}
 .quick .btn{flex:1}
@@ -446,7 +447,15 @@ function drawSheet(){
   two.append(field('fType','Tipo',sel));
   two.append(field('fStab','Stabilità dopo apertura (giorni)',inp('number',F.draft?.stab??(p.stab||''),{min:0,inputMode:'numeric',placeholder:'Facoltativo'})));
   fp.append(two);
-  sh.append(fp);
+  if(F.mode==='carico'){
+    const known=!!(prod(F.code)||{}).name;
+    if(aiOn()&&!known){
+      fp.append(photoButton('📷 1 · Foto prodotto','prodotto'));
+      fp.append(el('div','hint','Inquadra il fronte della confezione con il nome del prodotto: compilo nome e ditta.'));
+      const pb=el('div');pb.id='prodBox';fp.append(pb);
+    }
+  }
+  sh.append(fp);renderProd();
 
   // Lotto
   const fl=el('fieldset');fl.append(el('legend',null,'Lotto'));
@@ -459,16 +468,9 @@ function drawSheet(){
     fl.append(g);
     if(sc.source==='gs1'&&(sc.lot||sc.exp))fl.append(el('div','note','Lotto e scadenza letti dal codice del produttore: controlla che corrispondano all\'etichetta.'));
     const box=el('div');box.id='ocrBox';fl.append(box);
-    const fileIn=el('input');fileIn.type='file';fileIn.accept='image/*';fileIn.setAttribute('capture','environment');fileIn.hidden=true;
-    const photoBtn=el('button','btn','Leggi scadenza e lotto dalla foto');photoBtn.type='button';
-    photoBtn.onclick=()=>{suspendCamera();fileIn.click()};
-    fileIn.onchange=async()=>{
-      const f=fileIn.files[0];fileIn.value='';if(!f)return;
-      try{const bmp=await createImageBitmap(f);const c=document.createElement('canvas');const k=Math.min(1,2000/Math.max(bmp.width,bmp.height));
-        c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);runOCR(c,true)}
-      catch(e){F.ocr={state:'error'};renderOcr()}
-    };
-    const row=el('div','quick');row.append(photoBtn,fileIn);fl.append(row);
+    const known=!!(prod(F.code)||{}).name;
+    fl.append(photoButton(aiOn()&&!known?'📷 2 · Foto lotto e scadenza':'📷 Foto lotto e scadenza','lotto'));
+    fl.append(el('div','hint','Fotografa da vicino (10-15 cm) solo la zona con LOT e scadenza, dritta e senza riflessi.'));
     renderOcr();
     if(F.snap&&!F.ocr&&(!sc.exp||(aiOn()&&!(prod(F.code)||{}).name))){const f=F;f.ocr={state:'running'};setTimeout(()=>{if(F===f)runOCR(f.snap,false)},0)}
   }else if(F.mode==='apertura'||F.mode==='scarico'){
@@ -611,17 +613,18 @@ async function readWithTesseract(src,token){
   }
   return {r,text:text.trim()};
 }
-async function runOCR(src,manual){
+async function runOCR(src,manual,kind){
   const token=F;if(!token)return;
   let r=null,text='',via='ocr',aiErr='';
   try{
     if(aiOn()){
       token.ocr={state:'running',ai:true};renderOcr();
       try{
-        const j=await api({action:'ai',image:toJpeg(src),mime:'image/jpeg'});
+        const j=await api({action:'ai',kind:kind||'tutto',image:toJpeg(src),mime:'image/jpeg'});
         if(F!==token)return;
-        r={exp:j.exp||'',confident:!!j.exp,candidates:j.exp?[j.exp]:[],lot:j.lot||'',lots:j.lot?[j.lot]:[],name:j.name||'',maker:j.maker||''};
-        text=[j.name&&'Prodotto: '+j.name,j.maker&&'Ditta: '+j.maker,j.ref&&'REF: '+j.ref,'Lotto: '+(j.lot||'non leggibile'),'Scadenza: '+(C.fmtIT(j.exp)||'non leggibile')].filter(Boolean).join('\n');
+        const lotOnly=kind==='lotto';
+        r={exp:j.exp||'',confident:!!j.exp,candidates:j.exp?[j.exp]:[],lot:j.lot||'',lots:j.lot?[j.lot]:[],name:lotOnly?'':j.name||'',maker:lotOnly?'':j.maker||''};
+        text=[!lotOnly&&j.name&&'Prodotto: '+j.name,j.maker&&'Ditta: '+j.maker,j.ref&&'REF: '+j.ref,'Lotto: '+(j.lot||'non leggibile'),'Scadenza: '+(C.fmtIT(j.exp)||'non leggibile')].filter(Boolean).join('\n');
         via='ai';
       }catch(e){aiErr=e.message||'errore';if(F!==token)return}
     }
@@ -635,6 +638,7 @@ async function runOCR(src,manual){
     if(r.maker&&fm&&!fm.value){fm.value=r.maker;o.prodFilled=true}
     if(o.prodFilled){token.scan.name=r.name;token.scan.maker=r.maker;readProductFields()}
     token.ocr=o;
+    if(kind==='lotto'){const b2=document.querySelector('.btn.photo[data-kind="lotto"]');if(b2)b2.classList.remove('solid')}
   }catch(e){if(F!==token)return;token.ocr={state:'error',msg:String(e&&e.message||e)}}
   renderOcr();
 }
@@ -655,7 +659,7 @@ function renderOcr(){
     n.append(ch);
   };
   if(!r.candidates.length){
-    const n=el('div','note warn',(o.lotFilled?`Lotto letto: ${r.lot}. `:'')+(o.prodFilled?'Nome e ditta compilati. ':'')+'Non ho trovato una data sull\'etichetta. Premi "Leggi scadenza e lotto dalla foto" e fotografa da vicino la scritta della scadenza, dritta e ben illuminata.');
+    const n=el('div','note warn',(o.lotFilled?`Lotto letto: ${r.lot}. `:'')+(o.prodFilled?'Nome e ditta compilati. ':'')+'Non ho trovato una data sull\'etichetta. Premi "Foto lotto e scadenza" e fotografa da vicino la scritta della scadenza, dritta e ben illuminata.');
     lotChips(n);n.append(seen());box.append(n);return}
   const n=el('div','note'+(o.filled&&(r.confident||r.candidates.length===1)?'':' warn'));
   let msg;
@@ -674,6 +678,45 @@ function renderOcr(){
   lotChips(n);
   n.append(seen());
   box.append(n);
+}
+
+/* ---------- Foto guidate: 1) prodotto  2) lotto e scadenza ---------- */
+function photoButton(label,kind){
+  const fileIn=el('input');fileIn.type='file';fileIn.accept='image/*';fileIn.setAttribute('capture','environment');fileIn.hidden=true;
+  const b=el('button','btn photo',label);b.type='button';b.dataset.kind=kind;
+  b.onclick=()=>{suspendCamera();fileIn.click()};
+  fileIn.onchange=async()=>{
+    const f=fileIn.files[0];fileIn.value='';if(!f||!F)return;
+    try{const bmp=await createImageBitmap(f);const c=document.createElement('canvas');const k=Math.min(1,2000/Math.max(bmp.width,bmp.height));
+      c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+      if(kind==='prodotto')runProductAI(c);else runOCR(c,true,'lotto')}
+    catch(e){if(kind==='prodotto'){F.prodAi={state:'error',msg:'Foto non leggibile'};renderProd()}else{F.ocr={state:'error'};renderOcr()}}
+  };
+  const wrap=el('div','quick');wrap.append(b,fileIn);return wrap;
+}
+async function runProductAI(src){
+  const token=F;if(!token)return;
+  if(!aiOn()){token.prodAi={state:'error',msg:'Per riconoscere il prodotto dalla foto serve il magazzino condiviso con l\'AI attiva e la connessione.'};renderProd();return}
+  token.prodAi={state:'running'};renderProd();
+  try{
+    const j=await api({action:'ai',kind:'prodotto',image:toJpeg(src),mime:'image/jpeg'});
+    if(F!==token)return;
+    const fn=$('fName'),fm=$('fMaker');
+    if(j.name&&fn)fn.value=j.name;
+    if(j.maker&&fm)fm.value=j.maker;
+    if(j.name||j.maker){token.scan.name=j.name||token.scan.name;token.scan.maker=j.maker||token.scan.maker;readProductFields()}
+    token.prodAi={state:'done',name:j.name||'',maker:j.maker||'',ref:j.ref||''};
+  }catch(e){if(F!==token)return;token.prodAi={state:'error',msg:e.message||'errore'}}
+  renderProd();
+}
+function renderProd(){
+  const box=$('prodBox');if(!box||!F)return;box.innerHTML='';
+  const o=F.prodAi;if(!o)return;
+  if(o.state==='running'){box.append(el('div','note','Riconosco il prodotto con l\'intelligenza artificiale…'));return}
+  if(o.state==='error'){box.append(el('div','note warn','Prodotto non riconosciuto: '+o.msg+' Scrivi nome e ditta a mano.'));return}
+  if(!o.name&&!o.maker){box.append(el('div','note warn','Non ho riconosciuto il prodotto. Rifai la foto al fronte della confezione, con il nome ben leggibile.'));return}
+  box.append(el('div','note',`Prodotto: ${o.name||'—'} · Ditta: ${o.maker||'—'}${o.ref?' · REF '+o.ref:''}. Controlla che sia giusto.`));
+  const b2=document.querySelector('.btn.photo[data-kind="lotto"]');if(b2&&!(F.ocr&&F.ocr.state==='done'))b2.classList.add('solid');
 }
 
 /* ---------- Inserimento da tastiera o lettore USB ---------- */
